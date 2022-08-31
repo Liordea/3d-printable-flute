@@ -1,0 +1,522 @@
+//whistle-designer-12.js
+
+// Global variable definitions for flute calculations
+// inputs
+var holeCount=7;  // Number of flute finger holes
+//var
+Df = new Array(10); // finger hole diameters
+var Demb1; // embouchure hole diameter
+var Demb2; // embouchure hole diameter
+var Bore;  //inside diameter of tube
+var Wall;  // wall thickness of tube
+//var OuterDiam;
+var Calib; // calibration frequency of middle A (440)
+var Intonation = 'just';
+var Vsound; // velocity of sound
+var Ff = new Array(10); // finger hole note frequencies
+var Fend; // all-holes-closed end-of-flute frequency
+// raw results (distances from "beginning of air column" which is actually undefined)
+var Xend; // effective location of end of flute
+var Cend; //end correction
+var Cclosed; //closed hole correction
+var Xorg; //uncorrected length
+var Xf = new Array(10);  // location of finger holes
+var Xemb; // location of embouchure
+var TopLength; // extra length from emb hole to top end, for overall length
+var EndEfFactor;
+//-----------------------------------------------------------------------------------
+
+// effective wall thickness, i.e. height of air column at open finger holes;
+// air column extends out past end of hole 3/4 of the hole 
+function te(n) {return (1.0*Wall) + (0.75*Df[n]);}
+diameter
+//-----------------------------------------------------------------------------------
+
+// Closed hole for tone hole n.  The length of the vibrating air column is
+// effectively increased by each closed tone hole which exists above the
+// first open tone hole. Corrections must be added for each such closed tone
+// tone hole to C_end, C_s, and C_o.
+function C_c(n) {return 0.25 * Wall * (Df[n]/Bore)*(Df[n]/Bore);}
+//-----------------------------------------------------------------------------------
+
+// Calculates the distance from physical open end of flute to effective end of
+// vibrating air column.  The vibrating air column ends beyond the end of the
+// flute and C_end is always positive. NOTE: Closed hole corrections must be added to
+// this value!
+function C_end() { 
+return EndEfFactor * Bore;
+// return 0.5 * Bore;
+//return 0.375 * Bore;
+//return 0.6133 * Bore / 2;	
+}
+//-----------------------------------------------------------------------------------
+
+// Calculates the effective distance from the first ("single") tone hole to
+// the end of the vibrating air column when only that hole is open.
+// NOTE: closed hole corrections must be added to this value!
+function C_s() { return  te(1)/( (Df[1]/Bore)*(Df[1]/Bore) + te(1)/(Xend-Xf[1]) ); }
+
+//-----------------------------------------------------------------------------------
+
+// Calculates the effective distance from the second and subsequent tone holes
+// to the end of the vibrating air column when all holes below are open.
+// NOTE: closed hole corrections must be added to this value!
+// NOTE: the value of this correction is invalid if the frequency of the note
+// played is above the cutoff frequency f_c.
+function C_o(n)
+{return ((Xf[n-1]-Xf[n])/2)*(Math.sqrt(1+4*(te(n)/(Xf[n-1]-Xf[n]))*(Bore/Df[n])*(Bore/Df[n]))-1);}
+
+
+//-----------------------------------------------------------------------------------
+
+// end correction for embouchure opening/ whistle window
+function C_emb() {
+	Le = document.forms.fluteForm.embWall.value;
+	Bd = (Bore*Bore)/(Demb1*Demb2);
+	//De = Math.sqrt(Demb1*Demb2);
+	De = Demb1/2+Demb2/2;
+	if(document.forms.fluteForm.design.selectedIndex==0) {
+		//alert("Whistle");
+		//Ec = 8/3*Bd;
+		//Ec = 2.7*(Bore/2)*(Bore/2)/Math.sqrt(Demb1*Demb2);
+		//Ec = 2.3*(Bore/2)*(Bore/2)/Math.sqrt(Demb1*Demb2);
+		Ec = Bd*(1*Le+0.3*De);
+	} else {
+		//alert("Flute");
+		Ec = Bd*11.5*Le*De/(1*Bore+2*Le);
+		//Ec = Bd*(3.5*Le+0.3*De);
+	}
+	return Ec;
+}
+//-----------------------------------------------------------------------------------
+
+// Calculates the cutoff frequency above which the open hole correction
+// is not valid.  Instrument should be designed so that all second register
+// notes are well below this frequency.
+function f_c(n) {
+if (Df[n]==0) return 0;
+//{return Vsound/(2*Math.PI)*(Df[n]/Bore)*1/Math.sqrt(te(n)*(Xf[n]-Xf[n-1]));}
+if (n==holeCount) s = Xend-Xf[holeCount]; 
+else { 
+	if (Df[n+1]>0)	s = Xf[n+1]-Xf[n]; 
+	else s = Xf[n+2]-Xf[n];
+	}
+a = Vsound/2/Math.PI*Df[n]/Bore/Math.sqrt(te(n)*s);
+//return a;
+return a/Ff[n];
+}
+//-----------------------------------------------------------------------------------
+
+// This is a non-iterative procedure using quadratic solutions of the Benade equations.
+function CalculateHoleDistances() {
+var i;
+var L;
+var holeNum;
+var a,b,c;
+// find end location...
+Xorg = Vsound * 0.5 / Fend;  // uncorrected location
+Cend = C_end();  //get end correction
+Xend = Xorg - Cend;  // subtract end correction
+Cclosed = 0;
+for(i=1;i<=holeCount;i++) Cclosed = Cclosed + C_c(i);
+for(i=1;i<=holeCount;i++) Xend = Xend - C_c(i);  // subtract closed hole corrections
+//alert("Xend="+Xend)
+
+// find first hole (from end) location
+L = Vsound * 0.5 / Ff[holeCount];
+for(i=2;i<=holeCount;i++) L = L - C_c(i-1);  // subtract closed hole corrections
+a = (Df[holeCount]/Bore)*(Df[holeCount]/Bore);
+if (Df[holeCount]==0) Xf[holeCount] = Xend;
+else {
+	b = -(Xend + L)*(Df[holeCount]/Bore)*(Df[holeCount]/Bore);
+	c = Xend * L * (Df[holeCount]/Bore)*(Df[holeCount]/Bore) + te(holeCount)*(L-Xend);
+	Xf[holeCount] = ( -b - Math.sqrt((b*b) - 4*a*c) ) / (2*a);
+}
+
+// find subsequent finger hole locations
+if(holeCount >= 2)
+	for(holeNum=holeCount-1;holeNum>0;holeNum--)
+		{
+		if (Df[holeNum]==0) { Xf[holeNum] = Xf[holeNum+1]; continue; }
+		L = Vsound * 0.5 / Ff[holeNum];
+		if (holeNum > 1 && holeNum <= holeCount) for(i=1;i<holeNum;i++) L = L - C_c(i);
+		a = 2;
+		if(holeNum==1) { // L1 hole calculated with thumb hole closed
+			b = - Xf[holeNum+2] - 3*L + te(holeNum)*(Bore/Df[holeNum])*(Bore/Df[holeNum]);
+			c = Xf[holeNum+2]*(L - te(holeNum)*(Bore/Df[holeNum])*(Bore/Df[holeNum])) + (L*L);
+		} else {
+			b = - Xf[holeNum+1] - 3*L + te(holeNum)*(Bore/Df[holeNum])*(Bore/Df[holeNum]);
+			c = Xf[holeNum+1]*(L - te(holeNum)*(Bore/Df[holeNum])*(Bore/Df[holeNum])) + (L*L);
+		}
+		Xf[holeNum] = ( -b - Math.sqrt((b*b) - 4*a*c) ) / (2*a);
+		}
+Xemb = C_emb();
+}
+//-----------------------------------------------------------------------------------
+
+//setting initial hole diameters relative to bore size
+function HoleInit() {
+	Wall = document.forms.fluteForm.wall.value;
+	Bore =  parseFloat(document.forms.fluteForm.OuterDiam.value)-2* parseFloat(Wall);
+	document.forms.fluteForm.embWall.value = Math.round(10*Bore*0.16)/10;
+	document.forms.fluteForm.diamEmb1.value = Math.round(10*Bore*0.31)/10;
+	document.forms.fluteForm.diamEmb2.value = Math.round(10*Bore*0.62)/10;
+	document.forms.fluteForm.diam1.value = Math.round(2*Bore*0.39)/2;
+	document.forms.fluteForm.diam2.value = Math.round(2*Bore*0.36)/2;
+	document.forms.fluteForm.diam3.value = Math.round(2*Bore*0.46)/2;
+	document.forms.fluteForm.diam4.value = Math.round(2*Bore*0.43)/2;
+	document.forms.fluteForm.diam5.value = Math.round(2*Bore*0.36)/2;	
+	document.forms.fluteForm.diam6.value = Math.round(2*Bore*0.57)/2;	
+	document.forms.fluteForm.diam7.value = Math.round(2*Bore*0.54)/2;	
+	
+	Calculate();
+}
+//-----------------------------------------------------------------------------------
+
+function TubeChange(key) {
+	if(key>=0 && key<=1) index = 0;
+	if(key>=2 && key<=3) index = 1;
+	if(key>=4 && key<=5) index = 2;
+	if(key>=6 && key<=7) index = 3;
+	if(key>=8 && key<=9) index = 4;
+	if(key>=10 && key<=11) index = 6;
+	if(key>=12 && key<=13) index = 8;	
+	if(key>=14 && key<=16) index = 9;
+	if(key>=17 && key<=19) index = 10;
+	if(key>=20 && key<=21) index = 11;
+	if(key>=22 && key<=25) index = 12;
+	if(key>=26 && key<=28) index = 13;
+	if(key>=29 && key<=32) index = 14;
+				//index  0   1   2   3   4     5    6	   7    8      9    10  11  12  13    14
+	OD = new Array(12, 13, 14, 15, 16, 16.6,  18,  19,  20,  22.2, 25.4, 28, 30, 32,   35);
+	WL = new Array(1,  1,  1,  1,  1,  1.2, 1.2, 1.2, 1.2,   1.2,  1.2,  1,  1, 1.2, 1.2);
+	document.forms.fluteForm.OuterDiam.value = OD[index];
+	document.forms.fluteForm.wall.value = Wall = WL[index];
+	Bore =  parseFloat(document.forms.fluteForm.OuterDiam.value)-2 * parseFloat(Wall);
+	document.forms.fluteForm.embWall.value = 2*Wall;
+	document.forms.fluteForm.diamEmb1.value = Math.round(2*Bore*0.32)/2;;
+	document.forms.fluteForm.diamEmb2.value = Math.round(2*Bore*0.57)/2;;	
+	document.forms.fluteForm.diam1.value = Math.round(2*Bore*0.39)/2;
+	document.forms.fluteForm.diam2.value = Math.round(2*Bore*0.39)/2;
+	document.forms.fluteForm.diam3.value = Math.round(2*Bore*0.46)/2;
+	document.forms.fluteForm.diam4.value = Math.round(2*Bore*0.43)/2;
+	document.forms.fluteForm.diam5.value = Math.round(2*Bore*0.36)/2;	
+	document.forms.fluteForm.diam6.value = Math.round(2*Bore*0.57)/2;	
+	document.forms.fluteForm.diam7.value = Math.round(2*Bore*0.50)/2;	
+}
+//-----------------------------------------------------------------------------------
+
+// sets input frequencies according to key and intonation choosen
+// sets tube size
+function KeyChange(key) { 
+	var freq;
+	Calib = document.forms.fluteForm.calib.value;
+	keyMidiCode = 68-key;
+	document.forms.fluteForm.key2.value = document.forms.fluteForm.key.value;
+	var int = document.forms.fluteForm.intonation;
+	if (int.selectedIndex==0)	Intonation = 'Just';
+	if (int.selectedIndex==1)	Intonation = 'HB-trad';
+	//if (int.selectedIndex==2) Intonation = 'HB-2';
+	if (int.selectedIndex==2) Intonation = 'ET';	
+	// intonation arrays
+	ME = new Array( 11, 10, 9, 7, 5, 4, 2, 0 ); //ET
+	MJ = new Array( 15/8, 16/9, 5/3, 3/2, 4/3, 5/4, 9/8, 1 ); //just
+	MH1 = new Array( 1.866066, 1.777778, 1.679720, 1.498380, 1.333333, 1.254890, 1.123790, 1 ); //HB-trad
+	//MH2 = new Array( 1.876554, 1.781883, 1.686872, 1.500936, 1.332539, 1.254890, 1.126511, 1 ); //HB-2
+	Fi = new Array(8);
+	for(i=1;i<=holeCount+1;i++) {
+		if(Intonation=="Just")
+			Fi[i] = MidiCodeToFreq(keyMidiCode)*MJ[i-1];		
+		else if(Intonation=="HB-trad")
+			Fi[i] = MidiCodeToFreq(keyMidiCode)*MH1[i-1];		
+		//else if(Intonation=="HB-2")
+		//	Fi[i] = MidiCodeToFreq(keyMidiCode)*MH2[i-1];
+		else if(Intonation=="ET")
+			Fi[i] = MidiCodeToFreq(keyMidiCode+ME[i-1]);
+	}
+	document.forms.fluteForm.freq1.value = Math.round(Fi[1]*10)/10;
+	document.forms.fluteForm.freq2.value = Math.round(Fi[2]*10)/10;
+	document.forms.fluteForm.freq3.value = Math.round(Fi[3]*10)/10;
+	document.forms.fluteForm.freq4.value = Math.round(Fi[4]*10)/10;
+	document.forms.fluteForm.freq5.value = Math.round(Fi[5]*10)/10;
+	document.forms.fluteForm.freq6.value = Math.round(Fi[6]*10)/10;
+	document.forms.fluteForm.freq7.value = Math.round(Fi[7]*10)/10;
+	document.forms.fluteForm.freqEnd.value = Math.round(Fi[8]*10)/10;
+	
+	//init tube size
+	TubeChange(key);
+	
+	// calculate holes
+	Calculate();
+}
+//----------------------------------------------------------------------------------
+
+// converts midicode to equal temperament frequency (midicode for A4=440Hz is 57)
+function MidiCodeToFreq(midiCode){return Calib*Math.pow(Math.pow(2.0, 1.0/12.0), midiCode-57);}
+//-----------------------------------------------------------------------------------
+
+// difference of freq in cents to nearest ET note acc. to base calibration
+function CentsDiff(f) {
+	cv = 12*1.442741049*Math.log(f/Calib);
+	cv = 100*(cv - Math.round(cv));
+	cv = Math.round(cv);
+	if (cv<0) { cv = -1*cv; cv = '–'+cv.toString(); }
+	if (cv>0) cv = '+'+cv.toString();
+	return cv;
+}
+//----------------------------------------------------------------------------------
+
+// raise frequncy in input by set amounts
+function RaiseFreq(f) {
+//if(document.forms.fluteForm.intonation[1].checked)
+//	return f = Math.round(f*810/80)/10;
+//Else
+	//return f = Math.round(f*1.002892288*10)/10;	//5 cents steps
+	return f = Math.round(f*1.00057778950655*10)/10;	//1 cent steps
+}
+//----------------------------------------------------------------------------------
+
+// lower frequncy in input by set amounts
+function LowerFreq(f) {
+//if(document.forms.fluteForm.intonation[1].checked)
+//	return f = Math.round(f*800/81)/10;
+//Else	
+	//return f = Math.round(f/1.002892288*10)/10;	//5 cents steps
+	return f = Math.round(f/1.00057778950655*10)/10;	//1 cent steps
+}
+//----------------------------------------------------------------------------------
+
+// find the note name to a given frequency (based on ET)
+function Freq2Note(f) {
+	a=Calib/1.0293; //50 cents  lower than calibration A (default A=440)
+	b=Calib*1.0293; //50 cents  higher than calibration A (default A=440)
+	Nn = new Array("A","Bb","B","C","C#","D","Eb","E","F","F#","G","G#"); 
+	if(f<a/4) f=f*8;
+	else if(f<a/2) f=f*4;
+	else if(f<a) f=f*2;
+	else if(f>2*a) f=f/2;
+	else if(f>4*a) f=f/2;	
+	for(c=0;c<12;c++) {
+		d=Math.pow(2,c/12); 
+		if(f>a*d && f<b*d ) return Nn[c];
+	}
+}
+//----------------------------------------------------------------------------------
+
+// convert Centigrade to Fahrenheit temperature, and vice versa.
+function Temp(t){ 
+	document.fluteForm.tempC.value = t; document.fluteForm.tempF.value = t*9/5-(-1)*32; 
+	Calculate();
+}
+//-----------------------------------------------------------------------------------
+
+// calculate slide length for a given variation in cents,
+// calculated with the base note frequency.
+function Slide() {
+	cents = document.fluteForm.slideCents.value;
+	f = Fend*Math.pow(2,cents/1200);
+	slide = Vsound*0.5/Fend - Vsound*0.5/f;
+	document.fluteForm.slideLength.value = Math.round(10*slide)/10;
+}
+//-----------------------------------------------------------------------------------
+
+// This function does the gruntwork of getting input, calling the calculation routine,
+// and delivering the results
+function Calculate() {
+	var i,Line;
+	// get input data
+	Vsound = 20055 * Math.sqrt(1*document.forms.fluteForm.tempC.value + 270.15);
+	//alert(Vsound);
+with (document.forms)
+	{
+	TopLength = 1*document.forms.fluteForm.topLength.value;
+	//obj = document.GetElementById('tlentext');
+	/*if(TopLength<0) {
+		if (obj.innerText) obj.innerText = "body";
+		else if (obj.textContent) obj.textContent = "body";
+	}
+	else {
+		if (obj.innerText) obj.innerText = "total";
+		else if (obj.textContent) obj.textContent = "total";	
+	}*/
+	EndEfFactor = document.forms.fluteForm.endEfFactor.value;
+	Calib = document.forms.fluteForm.calib.value;
+	
+//	Bore = document.forms.fluteForm.bore.value;
+	Wall = document.forms.fluteForm.wall.value;
+	Bore =  parseFloat(document.forms.fluteForm.OuterDiam.value)-2 * parseFloat(Wall);
+	Demb1 = document.forms.fluteForm.diamEmb1.value;
+	Demb2 = document.forms.fluteForm.diamEmb2.value;
+	Df[1]= document.forms.fluteForm.diam1.value;
+	Df[2]= document.forms.fluteForm.diam2.value;
+	Df[3]= document.forms.fluteForm.diam3.value;
+	Df[4]= document.forms.fluteForm.diam4.value;
+	Df[5]= document.forms.fluteForm.diam5.value;
+	Df[6]= document.forms.fluteForm.diam6.value;
+	Df[7]= document.forms.fluteForm.diam7.value;
+/*	Df[8]= document.forms.fluteForm.diam8.value;
+	Df[9]= document.forms.fluteForm.diam9.value;	
+	Df[10]= document.forms.fluteForm.diam10.value;
+*/	
+	Ff[1]= document.forms.fluteForm.freq1.value; if(Ff[1]==0) Df[1] = 0;
+	Ff[2]= document.forms.fluteForm.freq2.value; if(Ff[2]==0) Df[2] = 0;
+	Ff[3]= document.forms.fluteForm.freq3.value; if(Ff[3]==0) Df[3] = 0;
+	Ff[4]= document.forms.fluteForm.freq4.value; if(Ff[4]==0) Df[4] = 0;
+	Ff[5]= document.forms.fluteForm.freq5.value; if(Ff[5]==0) Df[5] = 0;
+	Ff[6]= document.forms.fluteForm.freq6.value; if(Ff[6]==0) Df[6] = 0;
+	Ff[7]= document.forms.fluteForm.freq7.value; if(Ff[7]==0) Df[7] = 0;
+/*	Ff[8]= document.forms.fluteForm.freq8.value; if(Ff[8]==0) Df[8] = 0;
+	Ff[9]= document.forms.fluteForm.freq9.value; if(Ff[9]==0) Df[9] = 0;	
+	Ff[10]= document.forms.fluteForm.freq10.value; if(Ff[10]==0) Df[10] = 0;
+*/
+	Fend = 1*document.forms.fluteForm.freqEnd.value; 
+	}
+// perform calculations
+CalculateHoleDistances();
+// output
+with (document.forms.fluteForm)
+	{
+//	Ec = C_emb();
+//	resultUncL.value = Math.round(10*Xorg)/10;
+//	resultEmbCor.value = Math.round(10*Ec)/10;
+//	resultEndCor.value = Math.round(10*Cend)/10;
+//	resultCclosed.value = Math.round(10*Cclosed)/10;
+//	resultEmb2.value = Math.round(10*(Xend-Xemb))/10;
+
+	centsdiff1.value = CentsDiff(Ff[1]);
+	centsdiff2.value = CentsDiff(Ff[2]);
+	centsdiff3.value = CentsDiff(Ff[3]);
+	centsdiff4.value = CentsDiff(Ff[4]);
+	centsdiff5.value = CentsDiff(Ff[5]);
+	centsdiff6.value = CentsDiff(Ff[6]);
+	centsdiff7.value = CentsDiff(Ff[7]);
+	centsdiffEnd.value = CentsDiff(Fend);
+
+	resultLength.value =  parseFloat(TopLength) + (Math.round(Xend-Xemb));
+	resultEmb.value = Math.round(10*(Xend-Xemb))/10;
+	result1.value = Math.round(10*(Xend-Xf[1]))/10; if (Df[1]==0) result1.value = 0;
+	result2.value = Math.round(10*(Xend-Xf[2]))/10; if (Df[2]==0) result2.value = 0;
+	result3.value = Math.round(10*(Xend-Xf[3]))/10; if (Df[3]==0) result3.value = 0;
+	result4.value = Math.round(10*(Xend-Xf[4]))/10; if (Df[4]==0) result4.value = 0;
+	result5.value = Math.round(10*(Xend-Xf[5]))/10; if (Df[5]==0) result5.value = 0;
+	result6.value = Math.round(10*(Xend-Xf[6]))/10; if (Df[6]==0) result6.value = 0;
+	result7.value = Math.round(10*(Xend-Xf[7]))/10; if (Df[7]==0) result7.value = 0;
+//	result8.value = Math.round(10*(Xend-Xf[8]))/10; if (Df[8]==0) result8.value = 0;
+//	result9.value = Math.round(10*(Xend-Xf[9]))/10; if (Df[9]==0) result9.value = 0;	
+//	result10.value = Math.round(10*(Xend-Xf[10]))/10; if (Df[10]==0) result10.value = 0;	
+//	resultEnd.value = Math.round(10*(Xend-Xend))/10;
+
+	cutoff1.value = Math.round(10*f_c(1))/10; if (Df[1]==0) cutoff1.value = 0;
+	cutoff2.value = Math.round(10*f_c(2))/10; if (Df[2]==0) cutoff2.value = 0;
+	cutoff3.value = Math.round(10*f_c(3))/10; if (Df[3]==0) cutoff3.value = 0;
+	cutoff4.value = Math.round(10*f_c(4))/10; if (Df[4]==0) cutoff4.value = 0;
+	cutoff5.value = Math.round(10*f_c(5))/10; if (Df[5]==0) cutoff5.value = 0;
+	cutoff6.value = Math.round(10*f_c(6))/10; if (Df[6]==0) cutoff6.value = 0;
+	cutoff7.value = Math.round(10*f_c(7))/10; if (Df[7]==0) cutoff7.value = 0;
+//	cutoff8.value = Math.round(10*f_c(8))/10; if (Df[8]==0) cutoff8.value = 0;
+//  cutoff9.value = Math.round(10*f_c(9))/10; if (Df[9]==0) cutoff9.value = 0;	
+//	cutoff10.value = Math.round(10*f_c(10))/10; if (Df[10]==0) cutoff10.value = 0;	
+ 	
+	spacing1.value = Math.round(10*(Xf[3]-Xf[1]))/10;	
+	spacing2.value = Math.round(10*(Xf[2]-Xf[1]))/10; if (Df[2]==0) spacing2.value = 0;
+	spacing3.value = Math.round(10*(Xf[4]-Xf[3]))/10;	
+	spacing4.value = Math.round(10*(Xf[4]-Xf[1]))/10;	
+	spacing5.value = Math.round(10*(Xf[6]-Xf[5]))/10;	
+	spacing6.value = Math.round(10*(Xf[7]-Xf[6]))/10;	
+	spacing7.value = Math.round(10*(Xf[7]-Xf[5]))/10;	
+//	spacing8.value = Math.round(10*(Xf[9]-Xf[8]))/10;	
+//	spacing9.value = Math.round(10*(Xf[9]-Xf[6]))/10;	
+//	spacing10.value = Math.round(10*(Xf[10]-Xf[9]))/10;	
+	
+	note1.value = Freq2Note(document.forms.fluteForm.freq1.value);
+	note2.value = Freq2Note(document.forms.fluteForm.freq2.value);
+	note3.value = Freq2Note(document.forms.fluteForm.freq3.value);
+	note4.value = Freq2Note(document.forms.fluteForm.freq4.value);
+	note5.value = Freq2Note(document.forms.fluteForm.freq5.value);
+	note6.value = Freq2Note(document.forms.fluteForm.freq6.value);
+	note7.value = Freq2Note(document.forms.fluteForm.freq7.value);
+//	note8.value = Freq2Note(document.forms.fluteForm.freq8.value);
+//	note9.value = Freq2Note(document.forms.fluteForm.freq9.value);
+//	note10.value = Freq2Note(document.forms.fluteForm.freq10.value);
+	noteEnd.value = Freq2Note(document.forms.fluteForm.freqEnd.value);
+	
+	Slide();
+	LengthToBore.value = Math.round(10*(resultEmb.value/Bore))/10;
+	bore.value =  Bore;
+	bore2.value = Bore;
+	optimumBore.value = Math.round(10*2620*Math.pow(document.forms.fluteForm.freqEnd.value, -5/6))/10; 
+	diff2OptBore.value = Math.round(10*((Bore/(2620*Math.pow(document.forms.fluteForm.freqEnd.value, -5/6)))-1)*100)/10;
+	}
+	n = document.forms.fluteForm.freqEnd.value;
+	if (n==0) low = "key ";
+		else if(n < 240) low = "Bass ";
+		else if (n < 425) low = "Low ";
+	 	else low = "";
+	c = document.forms.fluteForm.calib.value; 		
+	if (c==440) cal = "";
+	else cal = "<span style='font-size:smaller; padding-left:1em;'><em> A=" + c + "</em></span>"; 
+	document.getElementById('keyheader').innerHTML = low + Freq2Note(document.forms.fluteForm.freqEnd.value) + cal;
+	document.getElementById('canvasheader').innerHTML = "Diagram: "+ low + Freq2Note(document.forms.fluteForm.freqEnd.value);
+	// add resize handler
+	window.addEventListener('resize', DrawWhistle, false);
+	DrawWhistle();
+}
+
+// construct drawing with help of wz_jsgraphics.js
+function DrawWhistle() {
+	// Use the "canvas" div for drawing
+	var jg = new jsGraphics("canvas");
+	//init
+	var win = window.innerWidth;
+		//scale
+	if (win>=1200) var sc = 1120/Xend;
+	else sc = 0.92*win/Xend; 
+	var gx = sc*Xend;
+	var gy = sc*Bore;
+	var gz = sc*Wall;
+	var xf = new Array(10);
+	var df = new Array(10);
+	for(i=1;i<=holeCount+1;i++)
+		xf[i] = sc*Xf[i];
+	for(i=1;i<=holeCount+1;i++)
+		df[i] = sc*Df[i];
+	//overpaint
+	jg.setColor("#ffffff");
+	jg.fillRect(-1*(gz+10),-1*(gz+10),gx+gz+30,gy+gz+40);
+	//body
+	jg.setColor("#bdb");
+	jg.fillRect(0,0,gx,gy);
+	jg.setColor("green");
+	jg.setStroke(gz);
+	jg.drawRect(-1*gz,-1*gz,gx+gz,gy+gz);	
+	jg.setStroke(1);
+	//metric scale, 10mm steps
+	var t = Math.ceil(Xf[1]/10)+2; 
+	jg.setColor("white");
+	for(i=1;i<=t;i++)
+		jg.drawLine(sc*(Xend-10*i), gy-5, sc*(Xend-10*i), gy);
+	//window
+	jg.setColor("maroon");	
+	jg.fillRect(0,(gy-sc*Demb2)/2,sc*Demb1,sc*Demb2);
+	//all holes
+	jg.setColor("#990000"); 
+	for(i=1;i<=holeCount+1;i++)
+		jg.fillEllipse(xf[i]-df[i],gy/2-df[i]/2,df[i],df[i]);
+	//thumb hole
+	jg.setColor("#FF9494");
+	jg.fillEllipse(xf[2]-df[2],gy/2-df[2]/2,df[2],df[2]);
+	//legend
+	jg.setColor("maroon");
+	if (Df[1]>0) jg.drawString("T1", xf[1]-df[1]+2,gy+gz);
+	if (Df[2]>0) jg.drawString("Th", xf[2]-df[2]+2,gy+gz);
+	if (Df[3]>0) jg.drawString("T2", xf[3]-df[3]+2,gy+gz);	
+	if (Df[4]>0) jg.drawString("T3", xf[4]-df[4]+2,gy+gz);	
+	if (Df[5]>0) jg.drawString("B1", xf[5]-df[5]+2,gy+gz);
+	if (Df[6]>0) jg.drawString("B2", xf[6]-df[6]+2,gy+gz);
+	if (Df[7]>0) jg.drawString("B3", xf[7]-df[7]+2,gy+gz);	
+	if (Df[8]>0) jg.drawString("B4", xf[8]-df[8]+2,gy+gz);	
+	if (Df[9]>0) jg.drawString("X",  xf[9]-df[9]+2,gy+gz);	
+	if (Df[10]>0) jg.drawString("X", xf[10]-df[10]+2,gy+gz);		
+	jg.paint();
+}
+
